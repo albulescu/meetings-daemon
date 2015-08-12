@@ -218,9 +218,15 @@ func main() {
 
     onError(err, "Fail to parse interval value");
 
+    timeout, error := time.ParseDuration(mongo.Key("timeout").MustString("10s"))
+
+    if error != nil {
+        timeout = 10 * time.Second;
+    }
+
     mongoDBDialInfo := &mgo.DialInfo{
         Addrs:    []string{host},
-        Timeout:  5 * time.Second,
+        Timeout:  timeout,
         Database: database,
         Username: user,
         Password: pass,
