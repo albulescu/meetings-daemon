@@ -147,10 +147,10 @@ func check( complete chan<- int ) {
     log.Print("Checking...");
 
     startedQuery := bson.M{
-        //"status": STATUS_SCHEDULED,
-        //"start_time": bson.M{
-        //    "$lte" : time.Now(),
-        //},
+        "status": STATUS_SCHEDULED,
+        "start_time": bson.M{
+            "$lte" : time.Now(),
+        },
     };
 
     err, started := meetings(startedQuery);
