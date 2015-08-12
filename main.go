@@ -81,10 +81,14 @@ func notify( meeting Meeting, status int ) {
     regIDs := []string{"4", "8", "15", "16", "23", "42"}
     msg := gcm.NewMessage(data, regIDs...)
 
-    // Create a Sender to send the message.
-    sender := &gcm.Sender{ApiKey: "sample_api_key"}
+    cfg := config.Section("gcm");
 
-    _, err := sender.Send(msg, config.Section("gcm").Key("retries").MustInt(3))
+    apikey := cfg.Key("apikey").String();
+
+    // Create a Sender to send the message.
+    sender := &gcm.Sender{ApiKey: apikey}
+
+    _, err := sender.Send(msg, cfg.Key("retries").MustInt(3))
 
     if err != nil {
         fmt.Println("Failed to send message:", err)
@@ -123,7 +127,7 @@ func check( complete chan<- int ) {
                 go status(meeting, STATUS_ACTIVE)
             }
         } else {
-            log.Print("Done")
+            log.Print("No entries")
         }
     }
 /*
