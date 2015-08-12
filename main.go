@@ -124,7 +124,7 @@ func notify( meeting Meeting, status int ) {
     if err != nil {
         log.Fatal("Failed to send message:", err)
     } else {
-        log.Print("Sent push notification to ", len(devices), " devices");
+        log.Print(len(devices), " devices notified that ", meeting.String(), " changed to ", status);
     }
 }
 
