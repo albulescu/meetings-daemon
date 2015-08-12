@@ -22,6 +22,20 @@ const (
     STATUS_ZOMBIE       = 5
 )
 
+type Device struct {
+    Id bson.ObjectId                `bson:"_id,omitempty"`
+    Token string                    `bson:"token,omitempty"`
+    Name string                     `bson:"name,omitempty"`
+    Platform string                 `bson:"platform,omitempty"`
+}
+
+type User struct {
+    Id bson.ObjectId                `bson:"_id,omitempty"`
+    FirstName string                `bson:"firstName,omitempty"`
+    LastName string                 `bson:"lastName,omitempty"`
+    Devices []Device                `bson:"devices,omitempty"`
+}
+
 type Meeting struct {
     Id bson.ObjectId                `bson:"_id,omitempty"`
     Goal string                     `bson:"goal"`
@@ -37,13 +51,10 @@ func (m Meeting) String() string {
         return fmt.Sprintf("[%s]@[%s]", m.Id.Hex(), m.Goal);
 }
 
-type Device struct {
-
-}
-
 var (
     session *mgo.Session;
     collection *mgo.Collection;
+    db *mgo.Database;
     config *ini.File
 )
 
@@ -58,7 +69,8 @@ func connect( info *mgo.DialInfo ) (err error) {
     sess.SetMode(mgo.Monotonic, true)
 
     session = sess;
-    collection = session.DB("om").C("meetings");
+    db = session.DB("om");
+    collection = db.C("meetings");
     return nil;
 }
 
@@ -75,24 +87,44 @@ func meetings(query bson.M) (error,[]Meeting) {
     return nil, meetings
 }
 
+func devices( meeting Meeting ) []string {
+
+    var devices []string
+
+    for _,participant := range meeting.Participants {
+        var user = User{};
+        db.C("users").FindId(participant).One(&user)
+        for _, device := range user.Devices {
+            devices = append(devices, device.Token)
+        }
+    }
+
+    return devices
+}
+
 func notify( meeting Meeting, status int ) {
 
-    data := map[string]interface{}{"score": "5x1", "time": "15:10"}
-    regIDs := []string{"4", "8", "15", "16", "23", "42"}
-    msg := gcm.NewMessage(data, regIDs...)
+    data := map[string]interface{}{
+        "action": "meeting_started",
+        "meeting_id": meeting.Id.Hex(),
+        "meeting_goal": meeting.Goal,
+    }
+
+    devices := devices(meeting)
+    msg := gcm.NewMessage(data, devices...)
 
     cfg := config.Section("gcm");
 
     apikey := cfg.Key("apikey").String();
 
-    // Create a Sender to send the message.
     sender := &gcm.Sender{ApiKey: apikey}
 
     _, err := sender.Send(msg, cfg.Key("retries").MustInt(3))
 
     if err != nil {
-        fmt.Println("Failed to send message:", err)
-        return
+        log.Fatal("Failed to send message:", err)
+    } else {
+        log.Print("Sent push notification to ", len(devices), " devices");
     }
 }
 
@@ -115,7 +147,10 @@ func check( complete chan<- int ) {
     log.Print("Checking...");
 
     startedQuery := bson.M{
-        "status": STATUS_ACTIVE,
+        //"status": STATUS_SCHEDULED,
+        //"start_time": bson.M{
+        //    "$lte" : time.Now(),
+        //},
     };
 
     err, started := meetings(startedQuery);
@@ -221,10 +256,10 @@ func main() {
     timeout, error := time.ParseDuration(mongo.Key("timeout").MustString("10s"))
 
     if error != nil {
-        timeout = 10 * time.Second;
+       timeout = 10 * time.Second;
     }
 
-    mongoDBDialInfo := &mgo.DialInfo{
+    dialInfo := &mgo.DialInfo{
         Addrs:    []string{host},
         Timeout:  timeout,
         Database: database,
@@ -235,7 +270,7 @@ func main() {
 
     log.Print("Connecting to mongo: ", host);
 
-    err = connect( mongoDBDialInfo );
+    err = connect( dialInfo );
 
     if( err != nil ) {
         log.Fatal("Fail to connect to mongo database");
