@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/alexjlockwood/gcm"
@@ -9,6 +10,7 @@ import (
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -21,6 +23,11 @@ const (
 	STATUS_CANCELED  = 4
 	STATUS_ZOMBIE    = 5
 )
+
+type ListenCommand struct {
+	Action string
+	Data   interface{}
+}
 
 type Device struct {
 	Id       bson.ObjectId `bson:"_id,omitempty"`
@@ -201,6 +208,11 @@ func fatal(message string) {
 }
 
 func validateIni() {
+	defaul := config.Section("")
+
+	if defaul.Key("port").String() == "" {
+		fatal("Please specify port to listen in ini file")
+	}
 
 	gcm := config.Section("gcm")
 
@@ -222,6 +234,81 @@ func validateIni() {
 
 	if mongo.Key("password").String() == "" {
 		fatal("mongo:password is not defined in ini file")
+	}
+}
+
+func execute(cmd ListenCommand) {
+	log.Print("[Listener] Execute ", cmd)
+}
+
+func handle(c net.Conn) {
+
+	addr := c.RemoteAddr().String()
+
+	log.Print("[LISTENER] New connection from ", addr)
+
+	for {
+		buf := make([]byte, 512)
+		nr, err := c.Read(buf)
+
+		if err != nil {
+			log.Print("[LISTENER] Fail to read from listener client ", addr)
+			return
+		}
+
+		var cmd ListenCommand
+
+		data := buf[0:nr]
+
+		err = json.Unmarshal(data, &cmd)
+
+		if err != nil || cmd.Action == "" || cmd.Data == "" {
+			log.Print("[LISTENER] Invalid request: ", string(data), " from ", addr)
+			c.Close()
+			return
+		}
+
+		execute(cmd)
+
+		var response bytes.Buffer
+
+		response.WriteString("OK\n")
+
+		_, err = c.Write(response.Bytes())
+
+		if err != nil {
+			return
+		}
+
+		c.Close()
+		return
+	}
+}
+
+func listen() {
+
+	port := config.Section("").Key("port")
+
+	ln, err := net.Listen("tcp", fmt.Sprint(":", port))
+
+	if err != nil {
+		log.Fatal("[LISTENER] Listen fail to port ", port, err)
+		return
+	}
+
+	log.Print("[LISTENER] Listening on ", port, "...")
+
+	for {
+
+		conn, err := ln.Accept()
+
+		//TODO: Check if allow that IP
+
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			go handle(conn)
+		}
 	}
 }
 
@@ -303,6 +390,8 @@ func main() {
 	log.Print("Connecting to mongo: ", host)
 
 	err = connect(dialInfo)
+
+	go listen()
 
 	if err != nil {
 		log.Fatal("Fail to connect to mongo database")
